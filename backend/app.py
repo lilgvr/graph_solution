@@ -26,6 +26,8 @@ def process():
         number = data['number']
         array1 = data['array1']
         array2 = data['array2']
+        show_count = data['show_count']
+        show_labels = data['show_labels']
     except KeyError as e:
         return jsonify({"error": f"Missing parameter: {str(e)}"}), 400
 
@@ -99,14 +101,19 @@ def process():
 
     # Функция для построения графика
     def plot_solution(t, solution, num_elements):
-        plt.figure(figsize=(10, 6))
-        for i in range(solution.shape[1]):
-            plt.plot(t, solution[:, i], label=f'Состояние {i}')
-        plt.xlabel('Время')
-        plt.ylabel('Вероятность')
-        plt.title('Решение системы дифференциальных уравнений для семиэлементного сечения')
-        plt.legend(ncols=num_elements, bbox_to_anchor=(1.05, 1), loc="upper left")
-        return plt
+        plots = []
+        num_plots = (solution.shape[1] + (show_count-1)) // show_count
+        for plot_index in range(num_plots):
+            start = plot_index * show_count
+            end = min((plot_index + 1) * show_count, solution.shape[1])
+            for i in range(start, end):
+                plt.plot(t, solution[:, i], label=f'Состояние {i+1}')
+            plt.xlabel('Время')
+            plt.ylabel('Вероятность')
+            plt.title(f'Решение системы дифференциальных уравнений для {num_elements}-элементного сечения')
+            plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+            plots.append(plot_to_base64(plt))
+        return plots
 
     num_elements = number
     combo_dict = generate_combinations(num_elements)
@@ -114,11 +121,12 @@ def process():
     pos = nx.spring_layout(G, k=0.3, iterations=100)
     plt.figure(figsize=(14, 14))
     nx.draw(G, pos, with_labels=True, node_size=500, node_color='lightblue', font_size=10, font_weight='normal')
-    # nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    if show_labels:
+        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
     img_str1 = plot_to_base64(plt)
 
     t, solution = solve_system(num_elements, array1, array2, combo_dict)
-    img_str2 = plot_to_base64(plot_solution(t, solution, num_elements))
+    img_str2 = plot_solution(t, solution, num_elements)
 
     result = {
         "plot1": img_str1,

@@ -1,41 +1,45 @@
 import './App.css'
-import { Box, Button, CardMedia, TextField, Typography } from '@mui/material'
-import { useState } from 'react'
+import {
+  Box,
+  Button,
+  CardMedia,
+  Checkbox,
+  CircularProgress,
+  FormControl,
+  FormControlLabel,
+  InputLabel,
+  MenuItem,
+  Select,
+  Snackbar,
+  TextField,
+  Typography,
+} from '@mui/material'
+import { useMemo, useState } from 'react'
+import usePostProcess from './usePostProcess'
 
-type ApiResponse = {
-  plot1: string
-  plot2: string
-}
-
-const API_URL = 'http://localhost:5000/process'
+const initialLambda = 2,
+  initialMu = 0
 
 const App = () => {
   const [elementsCount, setElementsCount] = useState<number>(1)
-  const [lambdas, setLambdas] = useState<(number | null)[]>([0])
-  const [mus, setMus] = useState<(number | null)[]>([0])
+  const [lambdas, setLambdas] = useState<(number | null)[]>([initialLambda])
+  const [mus, setMus] = useState<(number | null)[]>([initialMu])
+  const [showLabels, setShowLabels] = useState<boolean>(false)
+  const [showCount, setShowCount] = useState<number>(2)
 
-  const [graphImage, setGraphImage] = useState<string>('')
-  const [plotImage, setPlotImage] = useState<string>('')
-
-  const handleSubmit = () => {
-    fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        number: elementsCount,
-        array1: lambdas,
-        array2: mus,
-      }),
+  const { handleSubmit, handleCancel, isLoading, response, error } =
+    usePostProcess({
+      elementsCount,
+      lambdas,
+      mus,
+      showLabels,
+      showCount,
     })
-      .then((res) => res.json())
-      .then((res: ApiResponse) => {
-        setGraphImage(res.plot1)
-        setPlotImage(res.plot2)
-      })
-      .catch(() => {})
-  }
+
+  const showCountOptions = useMemo(
+    () => new Array(elementsCount).fill(1).map((_, i) => 2 ** (i + 1)),
+    [elementsCount]
+  )
 
   return (
     <>
@@ -51,8 +55,9 @@ const App = () => {
               setElementsCount(value)
 
               if (value) {
-                setLambdas(new Array<number>(value).fill(0))
-                setMus(new Array<number>(value).fill(0))
+                setLambdas(new Array<number>(value).fill(initialLambda))
+                setMus(new Array<number>(value).fill(initialMu))
+                setShowCount(2 ** value)
               }
             }}
           />
@@ -60,10 +65,39 @@ const App = () => {
           <Button
             variant="contained"
             sx={{ maxHeight: '40px' }}
-            onClick={handleSubmit}
+            onClick={isLoading ? handleCancel : handleSubmit}
+            color={isLoading ? 'error' : undefined}
+            disabled={
+              lambdas.some((v) => v === null) || mus.some((v) => v === null)
+            }
           >
-            Отправить
+            {isLoading ? 'Отмена' : 'Отправить'}
           </Button>
+
+          <FormControl sx={{ marginTop: '8px' }}>
+            <InputLabel>Количество отображаемых состояний</InputLabel>
+            <Select
+              value={showCount}
+              label="Количество отображаемых состояний"
+              onChange={(event) => {
+                setShowCount(+event.target.value)
+              }}
+            >
+              {showCountOptions.map((opt) => (
+                <MenuItem value={opt}>{opt}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                value={showLabels}
+                onChange={(_, checked) => setShowLabels(checked)}
+              />
+            }
+            label="Показать подписи"
+          />
         </Box>
 
         <Box display="flex" gap="8px" flexDirection="column">
@@ -73,11 +107,16 @@ const App = () => {
 
           {lambdas.map((lambda, index) => (
             <TextField
+              key={`lambda-${index}`}
               onChange={(e) => {
+                const value = e.target.value
                 setLambdas((prevState) =>
-                  prevState.map((v, i) => (i === index ? +e.target.value : v))
+                  prevState.map((v, i) =>
+                    i === index ? (value.length ? +value : null) : v
+                  )
                 )
               }}
+              error={lambda === null}
               type="number"
               label={`λ${index + 1}`}
               value={lambda}
@@ -95,12 +134,17 @@ const App = () => {
 
           {mus.map((mu, index) => (
             <TextField
+              key={`mu-${index}`}
               onChange={(e) => {
+                const value = e.target.value
                 setMus((prevState) =>
-                  prevState.map((v, i) => (i === index ? +e.target.value : v))
+                  prevState.map((v, i) =>
+                    i === index ? (value.length ? +value : null) : v
+                  )
                 )
               }}
               type="number"
+              error={mu === null}
               label={`μ${index + 1}`}
               value={mu}
               inputProps={{
@@ -110,18 +154,36 @@ const App = () => {
           ))}
         </Box>
       </Box>
-      {!!graphImage.length && !!plotImage.length && (
-        <Box display="flex" flexDirection="column" gap="16px" maxWidth="80%">
-          <CardMedia
-            component="img"
-            src={`data:image/png;base64, ${graphImage}`}
-          />
-          <CardMedia
-            component="img"
-            src={`data:image/png;base64, ${plotImage}`}
-          />
-        </Box>
+      {isLoading ? (
+        <CircularProgress sx={{ marginLeft: 16 }} />
+      ) : (
+        !!response?.plot1?.length &&
+        !!response.plot2?.length && (
+          <Box display="flex" flexDirection="column" gap="16px" maxWidth="80%">
+            <CardMedia
+              component="img"
+              src={`data:image/png;base64, ${response.plot1}`}
+            />
+            {response.plot2.map((img) => (
+              <CardMedia
+                key={img}
+                component="img"
+                src={`data:image/png;base64, ${img}`}
+              />
+            ))}
+          </Box>
+        )
       )}
+
+      <Snackbar
+        ContentProps={{
+          sx: { backgroundColor: 'darkred' },
+        }}
+        open={error.isError}
+        autoHideDuration={6000}
+        message={error.message}
+        security="error"
+      />
     </>
   )
 }
